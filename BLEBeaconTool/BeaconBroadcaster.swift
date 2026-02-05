@@ -109,7 +109,7 @@ class BeaconBroadcaster: NSObject, CBPeripheralManagerDelegate {
         
         let advertisementData: [String: Any] = [
             CBAdvertisementDataManufacturerDataKey: beaconData,
-            CBAdvertisementDataLocalNameKey: "BLEBeaconTool-\(major)-\(minor)"
+            CBAdvertisementDataLocalNameKey: "\(beaconUUID.uuid)-\(major)-\(minor)"
         ]
         
         peripheralManager.startAdvertising(advertisementData)
@@ -123,7 +123,32 @@ class BeaconBroadcaster: NSObject, CBPeripheralManagerDelegate {
         print("   TX Power: \(txPower) dBm")
         print("   Local Name: BLEBeaconTool-\(major)-\(minor)")
         print("   Company ID: 0x004C (Apple)")
+        // Show actual iBeacon payload
+        showActualPayload()
         print()
+    }
+
+    private func showActualPayload() {
+        guard let beaconUUID = UUID(uuidString: uuid) else { return }
+        
+        // Create the actual iBeacon manufacturer data
+        var beaconData = Data()
+        beaconData.append(Data([0x4C, 0x00])) // Apple Company ID
+        beaconData.append(Data([0x02, 0x15])) // iBeacon type + length
+        beaconData.append(withUnsafeBytes(of: beaconUUID.uuid) { Data($0) })
+        beaconData.append(Data([UInt8(major >> 8), UInt8(major & 0xFF)]))
+        beaconData.append(Data([UInt8(minor >> 8), UInt8(minor & 0xFF)]))
+        beaconData.append(Data([UInt8(bitPattern: txPower)]))
+        
+        print("\n📦 Actual iBeacon Payload (\(beaconData.count) bytes):")
+        print("   Hex: \(beaconData.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        print("   Breakdown:")
+        print("     4C 00          - Apple Company ID")
+        print("     02 15          - iBeacon Type & Length")
+        print("     \(beaconUUID.uuidString.replacingOccurrences(of: "-", with: "").chunked(by: 2).joined(separator: " ")) - UUID")
+        print("     \(String(format: "%02X %02X", major >> 8, major & 0xFF))        - Major (\(major))")
+        print("     \(String(format: "%02X %02X", minor >> 8, minor & 0xFF))        - Minor (\(minor))")
+        print("     \(String(format: "%02X", UInt8(bitPattern: txPower)))           - TX Power (\(txPower) dBm)")
     }
     
     private func showStatus() {
@@ -139,4 +164,14 @@ extension DateFormatter {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+}
+
+extension String {
+    func chunked(by length: Int) -> [String] {
+        return stride(from: 0, to: count, by: length).map {
+            let start = index(startIndex, offsetBy: $0)
+            let end = index(start, offsetBy: min(length, count - $0))
+            return String(self[start..<end])
+        }
+    }
 }

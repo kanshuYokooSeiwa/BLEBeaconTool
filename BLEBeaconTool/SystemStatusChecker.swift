@@ -10,19 +10,16 @@ import CoreBluetooth
 
 class SystemStatusChecker: NSObject, CBCentralManagerDelegate {
     private var centralManager: CBCentralManager!
+    private var completion: (() -> Void)?
     
-    func checkStatus() {
+    func checkStatus(completion: @escaping () -> Void) {
+        self.completion = completion
+        
         print("macOS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
         print("App Bundle ID: \(Bundle.main.bundleIdentifier ?? "Unknown")")
         print()
         
         centralManager = CBCentralManager(delegate: self, queue: nil)
-        
-        // Wait for Bluetooth status
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.showPermissionStatus()
-            exit(0)
-        }
     }
     
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -42,6 +39,9 @@ class SystemStatusChecker: NSObject, CBCentralManagerDelegate {
         @unknown default:
             print("❓ Bluetooth Status: Unknown (\(central.state.rawValue))")
         }
+        
+        showPermissionStatus()
+        completion?()
     }
     
     private func showPermissionStatus() {
@@ -55,3 +55,4 @@ class SystemStatusChecker: NSObject, CBCentralManagerDelegate {
         print("4. Run as admin if needed: sudo ./BLEBeaconTool")
     }
 }
+

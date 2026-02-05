@@ -9,6 +9,14 @@ import Foundation
 import CoreBluetooth
 import ArgumentParser
 
+extension DateFormatter {
+    static let timestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+}
+
 struct BLEBeaconTool: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "BLE iBeacon Broadcasting and Scanning Tool",
@@ -23,19 +31,19 @@ extension BLEBeaconTool {
             abstract: "Broadcast iBeacon signals"
         )
         
-        @Option(name: .long, help: "UUID for the beacon")
+        @Option(name: .shortAndLong, help: "UUID for the beacon")
         var uuid: String = "92821D61-9FEE-4003-87F1-31799E12017A"
-            
-        @Option(name: .long, help: "Major value (1-65535)")
+        
+        @Option(name: .shortAndLong, help: "Major value (1-65535)")
         var major: UInt16 = 100
-            
-        @Option(name: .long, help: "Minor value (1-65535)")
+        
+        @Option(name: .shortAndLong, help: "Minor value (1-65535)")
         var minor: UInt16 = 1
-            
-        @Option(name: .long, help: "TX Power (-59 to 4 dBm)")
+        
+        @Option(name: .shortAndLong, help: "TX Power (-59 to 4 dBm)")
         var power: Int8 = -59
-            
-        @Flag(name: .long, help: "Enable verbose output")
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
         var verbose = false
         
         func run() throws {
@@ -113,15 +121,7 @@ extension BLEBeaconTool {
             print(String(repeating: "=", count: 50))
             
             let statusChecker = SystemStatusChecker()
-            let semaphore = DispatchSemaphore(value: 0)
-            
-            statusChecker.checkStatus {
-                semaphore.signal()
-            }
-            
-            semaphore.wait()
+            statusChecker.checkStatus()
         }
     }
 }
-// Add this line at the very end of the file:
-BLEBeaconTool.main()
