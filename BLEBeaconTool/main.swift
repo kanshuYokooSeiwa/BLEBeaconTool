@@ -6,6 +6,114 @@
 //
 
 import Foundation
+import CoreBluetooth
+import ArgumentParser
 
-print("Hello, World!")
+struct BLEBeaconTool: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "BLE iBeacon Broadcasting and Scanning Tool",
+        subcommands: [Advertise.self, Scan.self, Status.self],
+        defaultSubcommand: Advertise.self
+    )
+}
 
+extension BLEBeaconTool {
+    struct Advertise: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Broadcast iBeacon signals"
+        )
+        
+        @Option(name: .shortAndLong, help: "UUID for the beacon")
+        var uuid: String = "92821D61-9FEE-4003-87F1-31799E12017A"
+        
+        @Option(name: .shortAndLong, help: "Major value (1-65535)")
+        var major: UInt16 = 100
+        
+        @Option(name: .shortAndLong, help: "Minor value (1-65535)")
+        var minor: UInt16 = 1
+        
+        @Option(name: .shortAndLong, help: "TX Power (-59 to 4 dBm)")
+        var power: Int8 = -59
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
+        var verbose = false
+        
+        func run() throws {
+            print("🎯 BLE iBeacon Broadcaster")
+            print("UUID: \(uuid)")
+            print("Major: \(major), Minor: \(minor)")
+            print("TX Power: \(power) dBm")
+            print(String(repeating: "=", count: 50))
+            
+            let broadcaster = BeaconBroadcaster(
+                uuid: uuid,
+                major: major,
+                minor: minor,
+                txPower: power,
+                verbose: verbose
+            )
+            
+            broadcaster.startBroadcasting()
+            
+            // Keep running until interrupted
+            RunLoop.main.run()
+        }
+    }
+    
+    struct Scan: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Scan for nearby iBeacon signals"
+        )
+        
+        @Option(name: .shortAndLong, help: "UUID to scan for (optional)")
+        var uuid: String?
+        
+        @Option(name: .shortAndLong, help: "Scan duration in seconds")
+        var duration: Int = 30
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
+        var verbose = false
+        
+        func run() throws {
+            print("📡 BLE iBeacon Scanner")
+            if let uuid = uuid {
+                print("Filtering UUID: \(uuid)")
+            } else {
+                print("Scanning for all iBeacons")
+            }
+            print("Duration: \(duration) seconds")
+            print(String(repeating: "=", count: 50))
+            
+            let scanner = BeaconScanner(
+                filterUUID: uuid,
+                duration: duration,
+                verbose: verbose
+            )
+            
+            scanner.startScanning()
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            // Keep running for specified duration
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
+                scanner.stopScanning()
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+        }
+    }
+    
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show Bluetooth status and system information"
+        )
+        
+        func run() throws {
+            print("🔍 System Status")
+            print(String(repeating: "=", count: 50))
+            
+            let statusChecker = SystemStatusChecker()
+            statusChecker.checkStatus()
+        }
+    }
+}
