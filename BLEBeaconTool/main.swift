@@ -23,19 +23,19 @@ extension BLEBeaconTool {
             abstract: "Broadcast iBeacon signals"
         )
         
-        @Option(name: .long, help: "UUID for the beacon")
+        @Option(name: .shortAndLong, help: "UUID for the beacon")
         var uuid: String = "92821D61-9FEE-4003-87F1-31799E12017A"
-            
-        @Option(name: .long, help: "Major value (1-65535)")
+        
+        @Option(name: .shortAndLong, help: "Major value (1-65535)")
         var major: UInt16 = 100
-            
-        @Option(name: .long, help: "Minor value (1-65535)")
+        
+        @Option(name: .shortAndLong, help: "Minor value (1-65535)")
         var minor: UInt16 = 1
-            
-        @Option(name: .long, help: "TX Power (-59 to 4 dBm)")
+        
+        @Option(name: .shortAndLong, help: "TX Power (-59 to 4 dBm)")
         var power: Int8 = -59
-            
-        @Flag(name: .long, help: "Enable verbose output")
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
         var verbose = false
         
         func run() throws {
@@ -45,18 +45,72 @@ extension BLEBeaconTool {
             print("TX Power: \(power) dBm")
             print(String(repeating: "=", count: 50))
             
-            let broadcaster = BeaconBroadcaster(
-                uuid: uuid,
-                major: major,
-                minor: minor,
-                txPower: power,
-                verbose: verbose
-            )
+            // Create configuration
+            let config: BeaconConfiguration
+            do {
+                config = try BeaconConfiguration(
+                    uuidString: uuid,
+                    major: major,
+                    minor: minor,
+                    txPower: power,
+                    verbose: verbose
+                )
+            } catch {
+                print("❌ Configuration Error: \(error.localizedDescription)")
+                throw ExitCode.failure
+            }
             
-            broadcaster.startBroadcasting()
+            // Use the enhanced strategy
+            let strategy = EnhancediBeaconStrategy()
+            print("🛠️ Strategy: \(strategy.strategyName)")
             
-            // Keep running until interrupted
-            RunLoop.main.run()
+            // Create semaphore for async handling  
+            let semaphore = DispatchSemaphore(value: 0)
+            var shouldStop = false
+            
+            // Set up signal handling for graceful shutdown
+            signal(SIGINT) { _ in
+                print("\n🛑 Received interrupt signal, stopping...")
+                shouldStop = true
+                semaphore.signal()
+            }
+            
+            // Check if emission is possible
+            Task {
+                if await strategy.canEmit() {
+                    print("✅ System can emit beacons")
+                    let result = await strategy.startEmission(config: config)
+                    switch result {
+                    case .success:
+                        print("🚀 Broadcasting iBeacon...")
+                        print("Press Ctrl+C to stop")
+                        print("Status updates every 10 seconds...")
+                        print("")
+                    case .failure(let error):
+                        print("❌ Emission Error: \(error.localizedDescription)")
+                        semaphore.signal()
+                        return
+                    }
+                } else {
+                    print("❌ System cannot emit beacons (hardware/permissions)")
+                    semaphore.signal()
+                    return
+                }
+            }
+            
+            // Keep running with proper run loop for timers
+            while !shouldStop {
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0))
+            }
+            
+            // Clean shutdown
+            Task {
+                await strategy.stopEmission()
+                semaphore.signal()
+            }
+            
+            // Wait a moment for cleanup
+            _ = semaphore.wait(timeout: .now() + 2.0)
         }
     }
     
@@ -112,16 +166,23 @@ extension BLEBeaconTool {
             print("🔍 System Status")
             print(String(repeating: "=", count: 50))
             
-            let statusChecker = SystemStatusChecker()
             let semaphore = DispatchSemaphore(value: 0)
+            let statusChecker = SystemStatusChecker()
             
             statusChecker.checkStatus {
                 semaphore.signal()
             }
             
-            semaphore.wait()
+            // Add timeout to prevent hanging
+            let timeoutResult = semaphore.wait(timeout: .now() + 10.0)
+            
+            if timeoutResult == .timedOut {
+                print("\n⚠️ Status check timed out after 10 seconds")
+                print("This may indicate Bluetooth system issues or insufficient permissions")
+            }
         }
     }
 }
-// Add this line at the very end of the file:
+
+// Main execution entry point
 BLEBeaconTool.main()

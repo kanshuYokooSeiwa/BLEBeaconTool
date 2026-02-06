@@ -1,0 +1,357 @@
+//
+//  main.swift
+//  BLEBeaconTool
+//
+//  Created by 横尾 on 2026/02/05.
+//
+
+import Foundation
+import CoreBluetooth
+import ArgumentParser
+import OSLog
+
+struct BLEBeaconTool: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "BLE iBeacon Broadcasting and Scanning Tool",
+        subcommands: [Advertise.self, Scan.self, Status.self, Diagnose.self, Test.self],
+        defaultSubcommand: Advertise.self
+    )
+}
+
+extension BLEBeaconTool {
+    struct Advertise: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Broadcast iBeacon signals"
+        )
+        
+        @Option(name: .long, help: "UUID for the beacon")
+        var uuid: String = "92821D61-9FEE-4003-87F1-31799E12017A"
+            
+        @Option(name: .long, help: "Major value (1-65535)")
+        var major: UInt16 = 100
+            
+        @Option(name: .long, help: "Minor value (1-65535)")
+        var minor: UInt16 = 1
+            
+        @Option(name: .long, help: "TX Power (-59 to 4 dBm)")
+        var power: Int8 = -59
+            
+        @Flag(name: .long, help: "Enable verbose output")
+        var verbose = false
+        
+        @Flag(name: .long, help: "Force use of fallback GATT service strategy")
+        var forceFallback = false
+        
+        @Flag(name: .long, help: "Use simulation mode for testing")
+        var simulate = false
+        
+        mutating func run() throws {
+            print("🎯 BLE iBeacon Broadcaster")
+            
+            // Create and validate configuration
+            let config: BeaconConfiguration
+            do {
+                config = try BeaconConfiguration(
+                    uuidString: uuid,
+                    major: major,
+                    minor: minor,
+                    txPower: power,
+                    verbose: verbose
+                )
+            } catch {
+                print("❌ Configuration Error: \(error.localizedDescription)")
+                if let beaconError = error as? BeaconError {
+                    if let recovery = beaconError.recoverySuggestion {
+                        print("💡 \(recovery)")
+                    }
+                }
+                throw ExitCode.failure
+            }
+            
+            // Validate configuration
+            let validation = config.validate()
+            if !validation.isValid {
+                print("❌ Configuration Issues:")
+                for issue in validation.issues {
+                    print("   - \(issue)")
+                }
+                throw ExitCode.failure
+            }
+            
+            if !validation.warnings.isEmpty {
+                print("⚠️ Configuration Warnings:")
+                for warning in validation.warnings {
+                    print("   - \(warning)")
+                }
+            }
+            
+            print(config.description)
+            print(String(repeating: "=", count: 50))
+            
+            // Choose strategy
+            let strategy: BeaconEmissionStrategy
+            if simulate {
+                strategy = SimulatedBeaconStrategy()
+            } else if forceFallback {
+                strategy = GATTServiceStrategy()
+            } else {
+                // Use enhanced iBeacon as default for now
+                strategy = EnhancediBeaconStrategy()
+            }
+            
+            print("🛠️ Strategy: \(strategy.strategyName)")
+            
+            // Use Task to handle async operations
+            let semaphore = DispatchSemaphore(value: 0)
+            var shouldExit = false
+            var exitCode: ExitCode = .success
+            
+            Task {
+                // Check if strategy can emit
+                let canEmit = await strategy.canEmit()
+                if !canEmit {
+                    print("❌ Cannot emit beacon with current strategy")
+                    print("💡 Try running with --simulate flag for testing")
+                    shouldExit = true
+                    exitCode = .failure
+                    semaphore.signal()
+                    return
+                }
+                
+                // Start emission
+                let result = await strategy.startEmission(config: config)
+                switch result {
+                case .success:
+                    print("✅ Beacon emission started successfully")
+                    
+                    // Setup signal handling for graceful shutdown
+                    let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+                    signalSource.setEventHandler {
+                        Task {
+                            print("\\n💫 Received interrupt signal - stopping beacon...")
+                            await strategy.stopEmission()
+                            semaphore.signal()
+                        }
+                    }
+                    signalSource.resume()
+                    
+                    // Keep running until interrupted
+                    try await Task.sleep(for: .seconds(Int.max))
+                    
+                case .failure(let error):
+                    print("❌ Failed to start beacon emission: \\(error.localizedDescription)")
+                    if let recovery = error.recoverySuggestion {
+                        print("💡 \\(recovery)")
+                    }
+                    shouldExit = true
+                    exitCode = .failure
+                    semaphore.signal()
+                }
+            }
+            
+            semaphore.wait()
+            if shouldExit {
+                throw exitCode
+            }
+        }
+    }
+    
+    struct Scan: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Scan for nearby iBeacon signals"
+        )
+        
+        @Option(name: .shortAndLong, help: "UUID to scan for (optional)")
+        var uuid: String?
+        
+        @Option(name: .shortAndLong, help: "Scan duration in seconds")
+        var duration: Int = 30
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
+        var verbose = false
+        
+        func run() throws {
+            print("📡 BLE iBeacon Scanner")
+            if let uuid = uuid {
+                print("Filtering UUID: \(uuid)")
+            } else {
+                print("Scanning for all iBeacons")
+            }
+            print("Duration: \(duration) seconds")
+            print(String(repeating: "=", count: 50))
+            
+            let scanner = BeaconScanner(
+                filterUUID: uuid,
+                duration: duration,
+                verbose: verbose
+            )
+            
+            scanner.startScanning()
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            // Keep running for specified duration
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
+                scanner.stopScanning()
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+        }
+    }
+    
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Show Bluetooth status and system information"
+        )
+        
+        func run() throws {
+            print("🔍 System Status")
+            print(String(repeating: "=", count: 50))
+            
+            let statusChecker = SystemStatusChecker()
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            statusChecker.checkStatus {
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+        }
+    }
+    
+    struct Diagnose: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Diagnose system capabilities and issues"
+        )
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
+        var verbose = false
+        
+        mutating func run() throws {
+            print("🔍 System Diagnosis")
+            print(String(repeating: "=", count: 50))
+            
+            let detector = SystemCapabilityDetector()
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            Task {
+                print("📊 System Capabilities:")
+                let capabilities = await detector.checkBluetoothCapabilities()
+                print("   Bluetooth Available: \\(capabilities.bluetoothAvailable ? \"✅\" : \"❌\")")
+                print("   Advertising Supported: \\(capabilities.advertisingSupported ? \"✅\" : \"❌\")")
+                print("   Peripheral Mode: \\(capabilities.peripheralModeSupported ? \"✅\" : \"❌\")")
+                print("   macOS Version: \\(capabilities.macOSVersion)")
+                print("   Restrictions Detected: \\(capabilities.restrictionsDetected ? \"⚠️ Yes\" : \"✅ No\")")
+                
+                print("\\n🔐 Permissions:")
+                let permissions = await detector.checkPermissions()
+                print("   Bluetooth Authorized: \\(permissions.bluetoothAuthorized ? \"✅\" : \"❌\")")
+                print("   Location Authorized: \\(permissions.locationAuthorized ? \"✅\" : \"❌\")")
+                
+                print("\\n💡 Recommended Strategy:")
+                let strategyType = await detector.recommendStrategy()
+                switch strategyType {
+                case is EnhancediBeaconStrategy.Type:
+                    print("   ✅ Enhanced iBeacon Strategy (optimal)")
+                case is GATTServiceStrategy.Type:
+                    print("   ⚠️  GATT Service Strategy (fallback)")
+                default:
+                    print("   🔧 Simulation Strategy (testing only)")
+                }
+                
+                print("\\n🚀 Troubleshooting:")
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+            if !capabilities.bluetoothAvailable {
+                print("   • Enable Bluetooth in System Settings")
+            }
+            if !permissions.bluetoothAuthorized {
+                print("   • Grant Bluetooth permissions:")
+                print("     System Settings → Privacy & Security → Bluetooth")
+            }
+            if capabilities.restrictionsDetected {
+                print("   • Try running with elevated privileges: sudo ./BLEBeaconTool")
+                print("   • Consider using --force-fallback flag")
+            }
+        }
+    }
+    
+    struct Test: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Test beacon emission with different strategies"
+        )
+        
+        @Option(name: .long, help: "Test duration in seconds")
+        var duration: Int = 30
+        
+        @Flag(name: .shortAndLong, help: "Enable verbose output")
+        var verbose = false
+        
+        mutating func run() throws {
+            print("🧪 Beacon Emission Test")
+            print("Duration: \(duration) seconds")
+            print(String(repeating: "=", count: 50))
+            
+            let config = try BeaconConfiguration(
+                uuidString: "92821D61-9FEE-4003-87F1-31799E12017A",
+                major: 999,
+                minor: 999,
+                txPower: -59,
+                verbose: verbose
+            )
+            
+            let strategies: [BeaconEmissionStrategy] = [
+                EnhancediBeaconStrategy(),
+                GATTServiceStrategy(),
+                SimulatedBeaconStrategy()
+            ]
+            
+            let semaphore = DispatchSemaphore(value: 0)
+            
+            Task {
+                for strategy in strategies {
+                    print("\\n🔬 Testing: \\(strategy.strategyName)")
+                    
+                    let canEmit = await strategy.canEmit()
+                    print("   Can Emit: \\(canEmit ? \"✅\" : \"❌\")")
+                    
+                    if canEmit {
+                        let result = await strategy.startEmission(config: config)
+                        switch result {
+                        case .success:
+                            print("   Start Result: ✅ Success")
+                            
+                            // Run for a short test period
+                            try await Task.sleep(for: .seconds(3))
+                            
+                            await strategy.stopEmission()
+                            print("   Stop Result: ✅ Success")
+                        case .failure(let error):
+                            print("   Start Result: ❌ \\(error.localizedDescription)")
+                        }
+                    } else {
+                        print("   Skipped: Strategy cannot emit")
+                    }
+                    
+                    // Brief pause between tests
+                    try await Task.sleep(for: .seconds(1))
+                }
+                
+                print("\\n🏁 Test sequence completed")
+                semaphore.signal()
+            }
+            
+            semaphore.wait()
+                }
+                
+                print("   Status: \(strategy.isEmitting ? "🟢 Active" : "🔴 Inactive")")
+            }
+            
+            print("\n✅ Test completed")
+        }
+    }
+}
+// Add this line at the very end of the file:
+BLEBeaconTool.main()
