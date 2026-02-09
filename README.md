@@ -35,6 +35,21 @@ cp .build/release/BLEBeaconTool /usr/local/bin/
 ./BLEBeaconTool advertise --verbose
 ```
 
+### Typical Range by TX Power
+
+TX Power (dBm) | Approximate Range | Use Case
+---------------|-------------------|----------
++4 dBm         | ~100-150 meters   | Maximum range, high power
+ 0 dBm         | ~70-100 meters    | Long range applications  
+-4 dBm         | ~50-70 meters     | Medium-long range
+-8 dBm         | ~30-50 meters     | Medium range
+-12 dBm        | ~20-30 meters     | Short-medium range
+-16 dBm        | ~10-20 meters     | Short range
+-20 dBm        | ~5-15 meters      | Very short range
+-40 dBm        | ~1-5 meters       | Proximity only
+-59 dBm        | ~0.5-2 meters     | Immediate proximity
+
+
 ### Scan for Beacons
 ```bash
 # Scan for 30 seconds (default)
