@@ -26,10 +26,10 @@ extension BLEBeaconTool {
         @Option(name: .shortAndLong, help: "UUID for the beacon")
         var uuid: String = "92821D61-9FEE-4003-87F1-31799E12017A"
         
-        @Option(name: .shortAndLong, help: "Major value (1-65535)")
+        @Option(name: .shortAndLong, help: "Major value (0-65535)")
         var major: UInt16 = 100
         
-        @Option(name: .shortAndLong, help: "Minor value (1-65535)")
+        @Option(name: .shortAndLong, help: "Minor value (0-65535)")
         var minor: UInt16 = 1
         
         @Option(name: .shortAndLong, help: "TX Power (-59 to 4 dBm)")
