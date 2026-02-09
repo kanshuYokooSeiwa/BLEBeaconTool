@@ -15,10 +15,22 @@ A command-line tool for broadcasting and scanning Bluetooth Low Energy (BLE) iBe
 1. Open `BLEBeaconTool.xcodeproj` in Xcode
 2. Build and run (⌘R)
 
-### Option 2: Swift Package Manager
+### Option 2: Command Line Build (xcodebuild)
 ```bash
-swift build -c release
-cp .build/release/BLEBeaconTool /usr/local/bin/
+# Build release version using xcodebuild
+xcodebuild -project BLEBeaconTool.xcodeproj -scheme BLEBeaconTool -configuration Release build
+
+# Copy binary to current directory for easy use
+cp /Users/$(whoami)/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Products/Release/BLEBeaconTool ./ble-beacon-tool
+
+# Or copy to system path (optional)
+sudo cp ./ble-beacon-tool /usr/local/bin/
+```
+
+### Option 3: Direct Binary Copy
+```bash
+# If you've already built in Xcode, just copy the binary
+cp /Users/$(whoami)/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Products/Release/BLEBeaconTool ./ble-beacon-tool
 ```
 
 ## Usage
