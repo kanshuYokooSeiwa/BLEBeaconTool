@@ -51,16 +51,35 @@ TX Power (dBm) | Approximate Range | Use Case
 
 
 ### Scan for Beacons
+
+The tool supports comprehensive beacon scanning with flexible filtering options:
+
+#### Scan All Beacons (No UUID Filter)
 ```bash
-# Scan for 30 seconds (default)
+# Scan for ALL iBeacons in range (discovery mode)
 ./BLEBeaconTool scan
 
+# Scan all beacons for 2 minutes with verbose output
+./BLEBeaconTool scan --duration 120 --verbose
+
+# Quick 10-second scan of all nearby beacons
+./BLEBeaconTool scan --duration 10
+```
+
+#### Scan Specific UUID
+```bash
 # Scan with specific UUID filter
 ./BLEBeaconTool scan --uuid "92821D61-9FEE-4003-87F1-31799E12017A"
 
-# Custom scan duration
-./BLEBeaconTool scan --duration 60 --verbose
+# Filter by UUID with custom duration
+./BLEBeaconTool scan --uuid "12345678-1234-1234-1234-123456789ABC" --duration 60
 ```
+
+**Discovery Mode Benefits:**
+- 🔍 **Find all nearby beacons** regardless of UUID
+- 📊 **Survey beacon density** in your environment  
+- 🐛 **Debug and troubleshoot** unknown beacons
+- 🏢 **Audit existing beacon deployments**
 
 ### Check System Status
 ```bash
@@ -72,14 +91,14 @@ TX Power (dBm) | Approximate Range | Use Case
 | Command | Description | Parameters |
 |---------|-------------|------------|
 | `advertise` | Broadcast iBeacon signal | `--uuid`, `--major`, `--minor`, `--power`, `--verbose` |
-| `scan` | Scan for beacons | `--uuid`, `--duration`, `--verbose` |
+| `scan` | Scan for beacons (all or filtered by UUID) | `--uuid` (optional), `--duration`, `--verbose` |
 | `status` | Show system status | None |
 
 ## Parameters
 
-- `--uuid` / `-u`: Beacon UUID (default: 92821D61-9FEE-4003-87F1-31799E12017A)
-- `--major` / `-m`: Major value 1-65535 (default: 100)
-- `--minor` / `-n`: Minor value 1-65535 (default: 1)  
+- `--uuid` / `-u`: Beacon UUID (default: 92821D61-9FEE-4003-87F1-31799E12017A for advertising, optional for scanning)
+- `--major` / `-m`: Major value 0-65535 (default: 100)
+- `--minor` / `-n`: Minor value 0-65535 (default: 1)  
 - `--power` / `-p`: TX Power -59 to 4 dBm (default: -59)
 - `--duration` / `-d`: Scan duration in seconds (default: 30)
 - `--verbose` / `-v`: Enable detailed output
@@ -118,13 +137,17 @@ Duration: 30 seconds
 ==================================================
 ✅ Location permission granted
 🔍 Starting beacon scan...
-🎯 Scanning for default test UUID
 ⏰ Scanning for 30 seconds...
 
 [14:30:45] 📡 Found: 92821D61-9FEE-4003-87F1-31799E12017A
            Major: 100, Minor: 1
            RSSI: -45 dBm, Proximity: Near (1-3m)
            Accuracy: 2.15m
+
+[14:30:48] 📡 Found: E2C56DB5-DFFB-48D2-B060-D0F5A71096E0
+           Major: 1, Minor: 1
+           RSSI: -62 dBm, Proximity: Far (>3m)
+           Accuracy: 5.42m
 ```
 
 ## Troubleshooting
