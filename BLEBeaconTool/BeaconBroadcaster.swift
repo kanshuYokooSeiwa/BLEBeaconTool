@@ -201,9 +201,6 @@ class EnhancediBeaconStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralMan
     
     
     private func startPeriodicStatusUpdates() {
-        // Create a background queue for the timer
-        let timerQueue = DispatchQueue(label: "beacon.status.timer", qos: .background)
-        
         statusTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
             DispatchQueue.main.async {
                 self.showStatus()

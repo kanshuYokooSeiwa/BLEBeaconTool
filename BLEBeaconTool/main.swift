@@ -66,14 +66,19 @@ extension BLEBeaconTool {
             
             // Create semaphore for async handling  
             let semaphore = DispatchSemaphore(value: 0)
-            var shouldStop = false
             
             // Set up signal handling for graceful shutdown
-            signal(SIGINT) { _ in
+            var sigintSrc: DispatchSourceSignal?
+            sigintSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+            sigintSrc?.setEventHandler {
                 print("\n🛑 Received interrupt signal, stopping...")
-                shouldStop = true
-                semaphore.signal()
+                Task {
+                    await strategy.stopEmission()
+                }
+                Foundation.exit(0)
             }
+            sigintSrc?.resume()
+            signal(SIGINT, SIG_IGN)
             
             // Check if emission is possible
             Task {
@@ -98,19 +103,8 @@ extension BLEBeaconTool {
                 }
             }
             
-            // Keep running with proper run loop for timers
-            while !shouldStop {
-                RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0))
-            }
-            
-            // Clean shutdown
-            Task {
-                await strategy.stopEmission()
-                semaphore.signal()
-            }
-            
-            // Wait a moment for cleanup
-            _ = semaphore.wait(timeout: .now() + 2.0)
+            // Keep running until interrupted
+            RunLoop.main.run()
         }
     }
     

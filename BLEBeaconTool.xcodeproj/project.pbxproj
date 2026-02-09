@@ -259,9 +259,11 @@
 		D3F7FFE32F346DBF008FB49B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = HES6WT25LF;
+				DEVELOPMENT_TEAM = H77K5SFZ62;
 				ENABLE_HARDENED_RUNTIME = YES;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = BLEBeaconTool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -270,9 +272,11 @@
 		D3F7FFE42F346DBF008FB49B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = HES6WT25LF;
+				DEVELOPMENT_TEAM = H77K5SFZ62;
 				ENABLE_HARDENED_RUNTIME = YES;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = BLEBeaconTool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
