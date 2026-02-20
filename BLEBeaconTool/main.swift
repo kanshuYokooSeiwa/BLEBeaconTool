@@ -139,15 +139,15 @@ extension BLEBeaconTool {
             )
             
             scanner.startScanning()
-            let semaphore = DispatchSemaphore(value: 0)
             
-            // Keep running for specified duration
+            // Schedule stop after duration
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
                 scanner.stopScanning()
-                semaphore.signal()
+                Foundation.exit(0)
             }
             
-            semaphore.wait()
+            // Keep the run loop spinning so CBCentralManager delegate callbacks are delivered
+            RunLoop.main.run()
         }
     }
     
