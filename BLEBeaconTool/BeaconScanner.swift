@@ -14,6 +14,7 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
     private let duration: Int
     private let verbose: Bool
     private var discoveredBeacons: Set<String> = []
+    private let fallbackNamePrefix = "BLEBeacon-"
     
     init(filterUUID: String?, duration: Int, verbose: Bool) {
         self.filterUUID = filterUUID?.uppercased()
@@ -65,7 +66,7 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
         if let filterUUID = filterUUID {
             print("🎯 Filtering for UUID: \(filterUUID)")
         } else {
-            print("🎯 Scanning for all iBeacons")
+            print("🎯 Scanning for all iBeacons + GATT fallback beacons")
         }
         
         print("⏰ Scanning for \(duration) seconds...")
@@ -77,6 +78,10 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
+        if processGATTFallbackData(advertisementData: advertisementData, rssi: RSSI, peripheral: peripheral) {
+            return
+        }
+
         // Look for manufacturer data
         guard let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
             return
@@ -92,6 +97,49 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
         if hexString.hasPrefix("4C000215") && hexString.count >= 50 {
             processIBeaconData(hexString: hexString, rssi: RSSI, peripheral: peripheral)
         }
+    }
+
+    private func processGATTFallbackData(advertisementData: [String: Any], rssi: NSNumber, peripheral: CBPeripheral) -> Bool {
+        let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
+        let overflowServiceUUIDs = advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] ?? []
+        let allServiceUUIDs = serviceUUIDs + overflowServiceUUIDs
+        let localName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
+
+        guard !allServiceUUIDs.isEmpty || localName.hasPrefix(fallbackNamePrefix) else {
+            return false
+        }
+
+        let upperFilterUUID = filterUUID?.uppercased()
+        if let upperFilterUUID {
+            let hasMatchingServiceUUID = allServiceUUIDs.contains { $0.uuidString.uppercased() == upperFilterUUID }
+            if !hasMatchingServiceUUID {
+                return false
+            }
+        }
+
+        let primaryServiceUUID = allServiceUUIDs.first?.uuidString ?? "N/A"
+        let beaconID = "GATT-\(peripheral.identifier.uuidString)-\(primaryServiceUUID)"
+        if !discoveredBeacons.contains(beaconID) || verbose {
+            discoveredBeacons.insert(beaconID)
+
+            let timestamp = DateFormatter.timestamp.string(from: Date())
+            let proximity = estimateProximity(rssi: rssi.intValue)
+            let displayName = localName.isEmpty ? "N/A" : localName
+
+            print("[\(timestamp)] 📡 Found GATT Fallback Beacon")
+            print("           Service UUID: \(primaryServiceUUID)")
+            print("           Local Name: \(displayName)")
+            print("           RSSI: \(rssi) dBm, Proximity: \(proximity)")
+
+            if verbose {
+                print("           Peripheral ID: \(peripheral.identifier.uuidString)")
+                print("           Service UUIDs: \(allServiceUUIDs.map { $0.uuidString }.joined(separator: ", "))")
+                print("           Advertisement Keys: \(advertisementData.keys.sorted().joined(separator: ", "))")
+            }
+            print()
+        }
+
+        return true
     }
     
     private func processIBeaconData(hexString: String, rssi: NSNumber, peripheral: CBPeripheral) {

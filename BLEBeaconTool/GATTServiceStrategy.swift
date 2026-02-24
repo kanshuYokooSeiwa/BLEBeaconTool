@@ -12,12 +12,15 @@ import OSLog
 class GATTServiceStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralManagerDelegate {
     private var peripheralManager: CBPeripheralManager!
     private var configuration: BeaconConfiguration?
+    private var beaconCharacteristic: CBMutableCharacteristic?
+    private var statusTimer: Timer?
     private var _isEmitting = false
     private let logger = Logger(subsystem: "com.blebeacon.tool", category: "gatt-strategy")
     private var continuation: CheckedContinuation<Result<Void, BeaconError>, Never>?
+    private let statusUpdateInterval: TimeInterval = 2.0
     
     // Custom service UUID for fallback beacon
-    private let beaconServiceUUID = CBUUID(string: "92821D61-9FEE-4003-87F1-31799E12017A")
+    private var beaconServiceUUID = CBUUID(string: "92821D61-9FEE-4003-87F1-31799E12017A")
     private let beaconCharacteristicUUID = CBUUID(string: "92821D61-9FEE-4003-87F1-31799E12017B")
     
     var isEmitting: Bool {
@@ -62,6 +65,8 @@ class GATTServiceStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralManager
             peripheralManager.removeAllServices()
             peripheralManager.stopAdvertising()
             _isEmitting = false
+            statusTimer?.invalidate()
+            statusTimer = nil
             logger.info("🛑 Stopped GATT service advertising")
             print("🛑 Stopped GATT service advertising")
         }
@@ -127,10 +132,14 @@ class GATTServiceStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralManager
             logger.info("✅ GATT service broadcasting successfully!")
             print("✅ GATT service broadcasting successfully!")
             print("📡 Beacon ID: \(config.localName) (GATT mode)")
+            print("📡 Service UUID: \(beaconServiceUUID.uuidString)")
+            print("⚠️ GATT fallback is not a standard iBeacon frame; iBeacon-only scanners may not detect it")
             
             if config.verbose {
                 showGATTDetails()
             }
+
+            startPeriodicStatusUpdates()
             
             continuation.resume(returning: .success(()))
             self.continuation = nil
@@ -143,21 +152,34 @@ class GATTServiceStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralManager
             continuation = nil
             return
         }
+
+        beaconServiceUUID = CBUUID(nsuuid: config.uuid)
         
         // Create beacon data characteristic
-        let beaconData = createBeaconData(config: config)
-        
         let characteristic = CBMutableCharacteristic(
             type: beaconCharacteristicUUID,
-            properties: [.read, .notify],
-            value: beaconData,
+            properties: [.read],
+            value: nil,
             permissions: [.readable]
         )
+        beaconCharacteristic = characteristic
         
         let service = CBMutableService(type: beaconServiceUUID, primary: true)
         service.characteristics = [characteristic]
         
         peripheralManager.add(service)
+    }
+
+    func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveRead request: CBATTRequest) {
+        guard request.characteristic.uuid == beaconCharacteristicUUID,
+              let config = configuration else {
+            peripheral.respond(to: request, withResult: .attributeNotFound)
+            return
+        }
+
+        let beaconData = createBeaconData(config: config)
+        request.value = beaconData
+        peripheral.respond(to: request, withResult: .success)
     }
     
     private func startGATTAdvertising() {
@@ -196,6 +218,32 @@ class GATTServiceStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralManager
         print("   Local Name: \(config.localName)")
         print("   Note: This is a fallback mode - not standard iBeacon format")
         print()
+    }
+
+    private func startPeriodicStatusUpdates() {
+        statusTimer = Timer.scheduledTimer(withTimeInterval: statusUpdateInterval, repeats: true) { _ in
+            DispatchQueue.main.async {
+                self.showStatus()
+            }
+        }
+
+        if let statusTimer {
+            RunLoop.current.add(statusTimer, forMode: .common)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + statusUpdateInterval) {
+            self.showStatus()
+        }
+    }
+
+    private func showStatus() {
+        guard let config = configuration else { return }
+
+        let timestamp = DateFormatter.timestamp.string(from: Date())
+        let status = _isEmitting ? "🟢 ACTIVE" : "🔴 INACTIVE"
+        print("[\(timestamp)] Status: \(status) | Mode: GATT fallback | Service UUID: \(beaconServiceUUID.uuidString)")
+        print("                   Beacon UUID: \(config.uuid.uuidString) | Major: \(config.major) | Minor: \(config.minor)")
+        print("")
     }
 }
 

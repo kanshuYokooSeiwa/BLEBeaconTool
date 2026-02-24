@@ -55,7 +55,7 @@ enum BeaconError: Error, LocalizedError {
         case .permissionDenied:
             return "Grant required permissions in System Settings"
         case .advertisingRestricted:
-            return "Try running with elevated privileges: sudo ./BLEBeaconTool"
+            return "Use an iPhone or dedicated hardware beacon for standard iBeacon advertising, or run with --allow-gatt-fallback for non-iBeacon BLE advertising"
         case .invalidConfiguration:
             return "Check your configuration parameters"
         case .systemNotSupported:

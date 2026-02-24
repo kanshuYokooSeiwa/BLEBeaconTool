@@ -16,6 +16,7 @@ class EnhancediBeaconStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralMan
     private let logger = Logger(subsystem: "com.blebeacon.tool", category: "broadcaster")
     private var continuation: CheckedContinuation<Result<Void, BeaconError>, Never>?
     private var statusTimer: Timer?
+    private let statusUpdateInterval: TimeInterval = 2.0
     
     var isEmitting: Bool {
         return _isEmitting
@@ -201,7 +202,7 @@ class EnhancediBeaconStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralMan
     
     
     private func startPeriodicStatusUpdates() {
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
+        statusTimer = Timer.scheduledTimer(withTimeInterval: statusUpdateInterval, repeats: true) { _ in
             DispatchQueue.main.async {
                 self.showStatus()
             }
@@ -210,8 +211,8 @@ class EnhancediBeaconStrategy: NSObject, BeaconEmissionStrategy, CBPeripheralMan
         // Add timer to current run loop
         RunLoop.current.add(statusTimer!, forMode: .common)
         
-        // Also show initial status after 5 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        // Also show initial status after first interval
+        DispatchQueue.main.asyncAfter(deadline: .now() + statusUpdateInterval) {
             self.showStatus()
         }
     }

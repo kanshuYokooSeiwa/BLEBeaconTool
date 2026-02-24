@@ -49,6 +49,7 @@ class SystemCapabilityDetector: SystemCapabilityChecker, @unchecked Sendable {
     private var peripheralManager: CBPeripheralManager?
     
     func checkBluetoothCapabilities() async -> SystemCapabilities {
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         let macOSVersion = ProcessInfo.processInfo.operatingSystemVersionString
         
         return await withCheckedContinuation { continuation in
@@ -62,7 +63,7 @@ class SystemCapabilityDetector: SystemCapabilityChecker, @unchecked Sendable {
                     advertisingSupported: peripheralManager.state == .poweredOn,
                     peripheralModeSupported: peripheralManager.state != .unsupported,
                     macOSVersion: macOSVersion,
-                    restrictionsDetected: self.detectmacOSRestrictions(macOSVersion)
+                    restrictionsDetected: self.detectmacOSRestrictions(osVersion)
                 )
                 continuation.resume(returning: capabilities)
             }
@@ -90,8 +91,8 @@ class SystemCapabilityDetector: SystemCapabilityChecker, @unchecked Sendable {
         }
     }
     
-    private func detectmacOSRestrictions(_ version: String) -> Bool {
-        // macOS Big Sur (11.0) and later have stricter BLE advertising restrictions
-        return version.contains("11.") || version.contains("12.") || version.contains("13.") || version.contains("14.") || version.contains("15.")
+    private func detectmacOSRestrictions(_ version: OperatingSystemVersion) -> Bool {
+        // macOS Big Sur (11.0) and later have stricter iBeacon manufacturer data restrictions
+        return version.majorVersion >= 11
     }
 }
