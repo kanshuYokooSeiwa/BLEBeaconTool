@@ -13,13 +13,15 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
     private let filterUUID: String?
     private let duration: Int
     private let verbose: Bool
+    private let dumpAds: Bool    // diagnostic: dump raw advertisement data from every peripheral
     private var discoveredBeacons: Set<String> = []
     private let fallbackNamePrefix = "BLEBeacon-"
     
-    init(filterUUID: String?, duration: Int, verbose: Bool) {
+    init(filterUUID: String?, duration: Int, verbose: Bool, dumpAds: Bool = false) {
         self.filterUUID = filterUUID?.uppercased()
         self.duration = duration
         self.verbose = verbose
+        self.dumpAds = dumpAds
         super.init()
     }
     
@@ -78,6 +80,12 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
     }
     
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
+
+        // ── Diagnostic mode: dump every peripheral's raw advertisement ──
+        if dumpAds {
+            dumpRawAdvertisement(peripheral: peripheral, advertisementData: advertisementData, rssi: RSSI)
+        }
+
         if processGATTFallbackData(advertisementData: advertisementData, rssi: RSSI, peripheral: peripheral) {
             return
         }
@@ -86,17 +94,48 @@ class BeaconScanner: NSObject, CBCentralManagerDelegate {
         guard let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
             return
         }
-        
-        // iBeacon manufacturer data is at least 25 bytes (Company ID + Type + Length + UUID + Major + Minor + TX Power)
-        // Note: CoreBluetooth strips the 0x4C00 company ID when placed in the dictionary, so mfgData actually starts with 0215
-        // OR sometimes it includes it. Let's convert to hex and check safely.
-        
+
         let hexString = mfgData.map { String(format: "%02X", $0) }.joined()
-        
-        // Standard iBeacon payload wrapped in Apple Manufacturer Data starts with 4C000215
+
+        // CoreBluetooth may or may not include the 2-byte Apple company ID (4C00) prefix.
+        // Case A: "4C000215..." — company ID included (typical on macOS scanner)
+        // Case B: "0215..."    — company ID stripped (sometimes on iOS scanner)
+        // Handle both.
         if hexString.hasPrefix("4C000215") && hexString.count >= 50 {
             processIBeaconData(hexString: hexString, rssi: RSSI, peripheral: peripheral)
+        } else if hexString.hasPrefix("4C00") {
+            // Contains Apple company ID but different subtype — not iBeacon, log if verbose
+            if verbose {
+                let timestamp = DateFormatter.timestamp.string(from: Date())
+                print("[\(timestamp)] 🍎 Apple device (non-iBeacon): \(peripheral.name ?? peripheral.identifier.uuidString) MfgData: \(hexString)")
+            }
+        } else if hexString.hasPrefix("0215") && hexString.count >= 42 {
+            // Company ID stripped by CoreBluetooth — reconstruct and process as iBeacon
+            let reconstructed = "4C00" + hexString
+            processIBeaconData(hexString: reconstructed, rssi: RSSI, peripheral: peripheral)
         }
+    }
+
+    /// Dumps all raw advertisement keys/values for diagnostic purposes (--dump-ads flag)
+    private func dumpRawAdvertisement(peripheral: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber) {
+        let name = peripheral.name ?? "(unnamed)"
+        let mfgData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data
+        let mfgHex = mfgData.map { $0.map { String(format: "%02X", $0) }.joined(separator: " ") } ?? "none"
+        let isApple = mfgData.map { $0.prefix(2) == Data([0x4C, 0x00]) } ?? false
+
+        // Only print if: has manufacturer data, OR is named/service-advertised
+        let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
+        guard mfgData != nil || !serviceUUIDs.isEmpty || peripheral.name != nil else { return }
+
+        let timestamp = DateFormatter.timestamp.string(from: Date())
+        print("[\(timestamp)] 🔍 DIAG | \(name) | RSSI: \(rssi)")
+        print("           Mfg data : \(mfgHex)\(isApple ? " ← Apple" : "")")
+        if !serviceUUIDs.isEmpty {
+            print("           Services : \(serviceUUIDs.map { $0.uuidString }.joined(separator: ", "))")
+        }
+        let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
+        if !localName.isEmpty { print("           LocalName: \(localName)") }
+        print()
     }
 
     private func processGATTFallbackData(advertisementData: [String: Any], rssi: NSNumber, peripheral: CBPeripheral) -> Bool {
