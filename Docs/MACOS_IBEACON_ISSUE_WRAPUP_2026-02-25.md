@@ -47,6 +47,91 @@ Hypothesized missing elements generated during Archive:
 
 ---
 
+## 4. Detailed Forensic Comparison
+
+To isolate the exact restrictions, we dumped the properties of the working `BeaconEmitter.app` (built via Xcode Archive) and compared them to our failing `BLEBeaconTool.app` (built and packaged via `xcodebuild` + shell script).
+
+### A. Entitlements Comparison (`codesign -d --entitlements :- <app>`)
+
+Both the working Archive and the failing CLI build share the **exact same** active entitlements:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.device.bluetooth</key>
+    <true/>
+</dict>
+</plist>
+```
+*Conclusion: Entitlements are identical. The Sandbox and Bluetooth keys are present, but insufficient on their own.*
+
+### B. Info.plist Comparison
+
+We compared the `Info.plist` of the working Archive against the `Info.plist` injected into our script-packaged CLI bundle.
+
+**Working Archive `BeaconEmitter/Info.plist` Key Attributes:**
+```xml
+<key>CFBundlePackageType</key>
+<string>APPL</string>
+<key>LSApplicationCategoryType</key>
+<string>public.app-category.developer-tools</string>
+<key>LSMinimumSystemVersion</key>
+<string>11.0</string>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>We need your permission to use Bluetooth to share iBeacon</string>
+<key>BuildMachineOSBuild</key>
+<string>24G419</string>
+<key>DTCompiler</key>
+<string>com.apple.compilers.llvm.clang.1_0</string>
+<!-- ... other DT (Developer Tool) Xcode build tags ... -->
+```
+
+**Failing CLI Bundle `BLEBeaconTool/Info.plist` Attributes:**
+```xml
+<key>CFBundlePackageType</key>
+<string>APPL</string>
+<key>LSMinimumSystemVersion</key>
+<string>11.0</string>
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>This app needs Bluetooth access to broadcast and scan for BLE beacons.</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>This app needs Bluetooth peripheral access to broadcast iBeacon signals.</string>
+```
+
+*Conclusion: Our CLI bundle mimics the essential `APPL` wrapper, OS version limits, and privacy strings. The Archive possesses additional `DT...` tags tracking the Xcode compiler versions and `BuildMachineOSBuild`, but these are standard IDE artifacts, not security directives.*
+
+### C. Signature Comparison (`codesign -dvv <app>`)
+
+We modified the deployment script to extract the exact `Apple Development: ... (G5LG9DJHK5)` signature from the `xcodebuild` output and apply it to the final App Bundle.
+
+**Working Archive:**
+```text
+Format=bundle with Mach-O thin (arm64)
+Signature size=4792
+Authority=Apple Development: 太郎 生和 (G5LG9DJHK5)
+TeamIdentifier=HES6WT25LF
+```
+
+**Failing CLI Bundle:**
+```text
+Format=app bundle with Mach-O thin (arm64)
+Signature size=4792
+Authority=Apple Development: 太郎 生和 (G5LG9DJHK5)
+TeamIdentifier=HES6WT25LF
+```
+
+*Conclusion: Both binaries report the exact same valid Developer Authority and Team ID, verifying that the packaging script correctly applied the signature.*
+
+### D. The Missing Link
+
+With Code Signatures, Entitlements, and Info.plist constraints perfectly mirrored, the restriction limiting `bluetoothd` payload access must exist in **Embedded Provisioning** or **Mach-O load commands** (like restricted runtime attributes) applied uniquely by Xcode's Archive exporter.
+
+---
+
 ## 4. Next Steps & Directions for Tomorrow
 
 To proceed, we must forensically break down the difference between the `.app` produced by `xcodebuild` and the `.app` produced by the Xcode Archive.
