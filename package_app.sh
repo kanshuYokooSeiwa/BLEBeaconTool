@@ -36,7 +36,13 @@ echo "✅ Created App Bundle structure"
 
 # Sign the app bundle
 echo "🔐 Signing App Bundle..."
-codesign --force --options runtime --deep --sign - --entitlements "$ENTITLEMENTS" "$APP_BUNDLE"
+# Extract the authority (identity) from the built binary
+IDENTITY=$(codesign -dvv "$BINARY_SOURCE" 2>&1 | grep "Authority=" | head -n 1 | cut -d= -f2)
+if [ -z "$IDENTITY" ]; then
+    IDENTITY="-"
+fi
+echo "Using Identity: $IDENTITY"
+codesign --force --options runtime --deep --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" "$APP_BUNDLE"
 
 echo "✨ Done! App Bundle created at: $APP_BUNDLE"
 echo "👉 usage: ./$APP_BUNDLE/Contents/MacOS/$APP_NAME status"
