@@ -18,6 +18,7 @@ enum BeaconError: Error, LocalizedError {
     case systemNotSupported
     case advertisingFailed(String)
     case invalidUUID(String)
+    case emissionUnverified
     
     var errorDescription: String? {
         switch self {
@@ -41,6 +42,8 @@ enum BeaconError: Error, LocalizedError {
             return "Failed to start advertising: \(reason)"
         case .invalidUUID(let uuid):
             return "Invalid UUID format: \(uuid)"
+        case .emissionUnverified:
+            return "CB stack accepted advertisement but beacon was not detected OTA"
         }
     }
     
@@ -64,6 +67,8 @@ enum BeaconError: Error, LocalizedError {
             return "Check system logs for more details"
         case .invalidUUID:
             return "Use a valid UUID format (e.g., 92821D61-9FEE-4003-87F1-31799E12017A)"
+        case .emissionUnverified:
+            return "Binary was not built via Xcode Archive (bluetoothd restriction). Build via Xcode IDE > Product > Archive to enable true iBeacon OTA emission, or use --allow-gatt-fallback for a GATT beacon that is always detectable."
         }
     }
 }

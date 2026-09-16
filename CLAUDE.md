@@ -20,38 +20,11 @@ macOS command-line tool for broadcasting and scanning Bluetooth Low Energy (BLE)
 | File | Role |
 |------|------|
 | `main.swift` | CLI entry point. ArgumentParser commands: `advertise`, `scan`, `status` |
-| `BeaconBroadcaster.swift` | `EnhancediBeaconStrategy` — standard CBPeripheral iBeacon (macOS <11) |
-| `PrivateKeyIBeaconStrategy.swift` | Uses private key `kCBAdvDataAppleBeaconKey` to attempt true iBeacon on macOS 11+ |
-| `GATTServiceStrategy.swift` | GATT service fallback + `SimulatedBeaconStrategy` (testing only) |
-| `BeaconScanner.swift` | Raw BLE scan via `CBCentralManager`. Detects iBeacon manufacturer data and GATT fallback beacons |
-| `BeaconEmissionStrategy.swift` | `BeaconEmissionStrategy` protocol + `SystemCapabilityDetector` |
+| `BeaconEmitter.swift` | Direct CoreBluetooth peripheral implementation matching BeaconEmitter GUI app |
+| `BeaconScanner.swift` | Raw BLE scan via `CBCentralManager`. Detects iBeacon manufacturer data |
 | `BeaconConfiguration.swift` | Config model with validation. Profiles: `.development`, `.testing`, `.production` |
 | `BeaconError.swift` | `BeaconError` enum with `LocalizedError` + `ValidationResult` |
 | `SystemStatusChecker.swift` | Diagnostics: Bluetooth state, permissions, macOS version |
-
-### Advertising Strategy Cascade (`main.swift`)
-
-```
-macOS < 11  → EnhancediBeaconStrategy (CBAdvertisementDataManufacturerDataKey)
-macOS 11+   → PrivateKeyIBeaconStrategy (kCBAdvDataAppleBeaconKey)
-               └─ rejected → GATTServiceStrategy (fallback, --allow-gatt-fallback)
---strict-ibeacon → fail instead of GATT fallback
-```
-
-### iBeacon Payload Format (25 bytes manufacturer data)
-
-```
-Offset  Len  Content
-0       2    Apple Company ID: 4C 00
-2       1    iBeacon type: 02
-3       1    Data length: 15 (21)
-4       16   UUID (big-endian)
-20      2    Major (big-endian)
-22      2    Minor (big-endian)
-24      1    TX Power (signed Int8)
-```
-
-When using `kCBAdvDataAppleBeaconKey`, only the 21-byte payload (bytes 4-24) is passed; CoreBluetooth prepends `4C 00 02 15` internally.
 
 ---
 
@@ -64,7 +37,7 @@ xcodebuild -project BLEBeaconTool.xcodeproj -scheme BLEBeaconTool -configuration
 cp ~/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Products/Release/BLEBeaconTool ./ble-beacon-tool
 ```
 
-### Package as App Bundle (required for Bluetooth TCC permissions on macOS 15+)
+### Package as App Bundle (required for Bluetooth TCC permissions on macOS)
 
 ```bash
 ./package_app.sh
@@ -75,39 +48,18 @@ cp ~/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Products/Release/
 
 ```bash
 # Always run from within the app bundle for proper TCC association
-./BLEBeaconTool.app/Contents/MacOS/BLEBeaconTool advertise
+./BLEBeaconTool.app/Contents/MacOS/BLEBeaconTool advertise --uuid 92821D61-9FEE-4003-87F1-31799E12017A --major 1 --minor 1
 ./BLEBeaconTool.app/Contents/MacOS/BLEBeaconTool scan --duration 30
 ./BLEBeaconTool.app/Contents/MacOS/BLEBeaconTool status
 ```
 
 ---
 
-## CLI Commands & Options
+## Important macOS BLE Emission & Verification Notes
 
-| Command | Key Options |
-|---------|-------------|
-| `advertise` | `--uuid`, `--major`, `--minor`, `--power`, `--allow-gatt-fallback`, `--strict-ibeacon`, `--verbose` |
-| `scan` | `--uuid` (optional filter), `--duration` (default 30s), `--verbose`, `--dump-ads` (diagnostic) |
-| `status` | none |
-
-Defaults: UUID=`92821D61-9FEE-4003-87F1-31799E12017A`, Major=100, Minor=1, Power=-59 dBm.
-
----
-
-## Critical macOS iBeacon Restriction (IMPORTANT)
-
-macOS 11+ **silently drops** Apple `0x4C` manufacturer data from BLE advertisements for apps not built via **Xcode IDE → Product → Archive**. This is a `bluetoothd` restriction, NOT a code issue.
-
-| Build Method | True iBeacon OTA |
-|---|---|
-| `swift build` / `swift run` | Silently dropped |
-| `xcodebuild` CLI | Silently dropped |
-| Script-packaged `.app` | Silently dropped |
-| **Xcode Archive (IDE)** | **Works** |
-
-**Consequence**: `kCBAdvDataAppleBeaconKey` will return `error == nil` (accepted by CoreBluetooth) but the `0x4C` frame is still dropped at the `bluetoothd` layer unless the binary was produced by Xcode Archive.
-
-**GATT fallback is always available** but is NOT detectable by iOS `CLLocationManager.startRangingBeacons()` — only by `CBCentralManager` scanning.
+1. **Payload Structure**: For iBeacon on macOS, `kCBAdvDataAppleBeaconKey` expects exactly 21 bytes (16 bytes UUID + 2 bytes Major + 2 bytes Minor + 1 byte Measured Power). CoreBluetooth internally wraps this with the Apple Company ID `0x4C00` and iBeacon header `0x0215`.
+2. **App Sandbox & Entitlements**: The binary must be packaged inside a `.app` bundle with `com.apple.security.app-sandbox` and `com.apple.security.device.bluetooth` signed by a valid Apple Development identity. Running raw unbundled binaries in Terminal lacks bundle identity and TCC privileges.
+3. **External Verification**: A single Mac Bluetooth LE chip cannot scan its own advertisements. Always verify broadcast reception on an external device (e.g. an iPhone running nRF Connect or Locate Beacon, or a second device).
 
 ---
 

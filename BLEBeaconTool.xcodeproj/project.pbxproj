@@ -263,14 +263,18 @@
 		D3F7FFE32F346DBF008FB49B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BLEBeaconTool/BLEBeaconTool.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = HES6WT25LF;
-				ENABLE_APP_SANDBOX = NO;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = bleBeaconTool;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = BLEBeaconTool;
+				INFOPLIST_FILE = BLEBeaconTool/Info.plist;
+				MARKETING_VERSION = "1.1.0";
+				PRODUCT_BUNDLE_IDENTIFIER = com.k-yokoo.BLEBeaconTool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};
@@ -279,14 +283,18 @@
 		D3F7FFE42F346DBF008FB49B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BLEBeaconTool/BLEBeaconTool.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = HES6WT25LF;
-				ENABLE_APP_SANDBOX = NO;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = bleBeaconTool;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = BLEBeaconTool;
+				INFOPLIST_FILE = BLEBeaconTool/Info.plist;
+				MARKETING_VERSION = "1.1.0";
+				PRODUCT_BUNDLE_IDENTIFIER = com.k-yokoo.BLEBeaconTool;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};

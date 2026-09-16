@@ -66,120 +66,49 @@ extension BLEBeaconTool {
                 throw ExitCode.failure
             }
             
-            let capabilityDetector = SystemCapabilityDetector()
-            var activeStrategy: (any BeaconEmissionStrategy)?
+            // Determine emission mode from CLI flags
+            let mode: EmissionMode = allowGattFallback ? .gatt : .iBeacon
+
+            if strictIBeacon && mode != .iBeacon {
+                print("❌ --strict-ibeacon was specified, but mode is not iBeacon")
+                throw ExitCode.failure
+            }
+
+            let emitter = BeaconEmitter()
             
             // Set up signal handling for graceful shutdown
-            var sigintSrc: DispatchSourceSignal?
-            sigintSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-            sigintSrc?.setEventHandler {
+            signal(SIGINT, SIG_IGN)
+            let sigintSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+            sigintSrc.setEventHandler {
                 print("\n🛑 Received interrupt signal, stopping...")
-                Task {
-                    if let strategy = activeStrategy {
-                        await strategy.stopEmission()
-                    }
-                }
+                emitter.stopEmission()
                 Foundation.exit(0)
             }
-            sigintSrc?.resume()
-            signal(SIGINT, SIG_IGN)
+            sigintSrc.resume()
             
-            // Resolve strategy, then start emission
             Task {
-                let capabilities = await capabilityDetector.checkBluetoothCapabilities()
-                let permissions = await capabilityDetector.checkPermissions()
-
-                if !capabilities.bluetoothAvailable {
-                    print("❌ Bluetooth is not available or powered on")
-                    Foundation.exit(1)
-                }
-
-                if !permissions.bluetoothAuthorized {
-                    let error = BeaconError.bluetoothUnauthorized
+                // 1. Start emission (BT state handled internally by delegate)
+                print("📡 Emission mode: \(mode.rawValue)")
+                let result = await emitter.startEmission(config: config, mode: mode)
+                
+                switch result {
+                case .failure(let error):
                     print("❌ Emission Error: \(error.localizedDescription)")
-                    if let suggestion = error.recoverySuggestion {
-                        print("💡 \(suggestion)")
-                    }
+                    if let suggestion = error.recoverySuggestion { print("💡 \(suggestion)") }
                     Foundation.exit(1)
+                    
+                case .success:
+                    print("✅ iBeacon broadcast is now active!")
+                    print("📡 Broadcasting. Press Ctrl+C to stop.")
+                    print("💡 Verify reception on an external device (e.g. iPhone with nRF Connect, Locate Beacon, or another device running 'BLEBeaconTool scan').")
                 }
-
-                // ── Strategy cascade ──────────────────────────────────────────
-                // macOS < 11  : EnhancediBeaconStrategy (standard, no restrictions)
-                // macOS 11+   : PrivateKeyIBeaconStrategy first (kCBAdvDataAppleBeaconKey)
-                //               └─ if rejected → GATTServiceStrategy (fallback)
-                // --strict-ibeacon: fail hard if private key is also rejected
-                // ─────────────────────────────────────────────────────────────
-
-                if !capabilities.restrictionsDetected {
-                    // macOS < 11: standard iBeacon path, no restrictions
-                    let strategy = EnhancediBeaconStrategy()
-                    activeStrategy = strategy
-                    print("🛠️ Strategy: \(strategy.strategyName)")
-
-                    guard await strategy.canEmit() else {
-                        print("❌ System cannot emit beacons (hardware/permissions)")
-                        Foundation.exit(1)
+                
+                // 2. Periodic status updates scheduled on main thread
+                DispatchQueue.main.async {
+                    let statusTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+                        emitter.showStatus()
                     }
-                    let result = await strategy.startEmission(config: config)
-                    switch result {
-                    case .success:
-                        print("🚀 Broadcasting iBeacon...")
-                        print("Press Ctrl+C to stop")
-                        print("Status updates every 2 seconds...")
-                        print("")
-                    case .failure(let error):
-                        print("❌ Emission Error: \(error.localizedDescription)")
-                        if let suggestion = error.recoverySuggestion { print("💡 \(suggestion)") }
-                        Foundation.exit(1)
-                    }
-
-                } else {
-                    // macOS 11+: iBeacon manufacturer data is restricted.
-                    // Try kCBAdvDataAppleBeaconKey (private CoreBluetooth key) first.
-                    print("🔑 macOS 11+ detected — trying Private Key iBeacon (kCBAdvDataAppleBeaconKey)...")
-                    let privateKeyStrategy = PrivateKeyIBeaconStrategy()
-                    activeStrategy = privateKeyStrategy
-
-                    let privateResult = await privateKeyStrategy.startEmission(config: config)
-                    switch privateResult {
-                    case .success:
-                        // Private key accepted — a true iBeacon frame may be on air
-                        print("🚀 Broadcasting via Private Key iBeacon...")
-                        print("Press Ctrl+C to stop")
-                        print("Status updates every 2 seconds...")
-                        print("")
-
-                    case .failure:
-                        // Private key rejected by this macOS version
-                        print("⚠️  kCBAdvDataAppleBeaconKey was rejected by this macOS version")
-
-                        if strictIBeacon {
-                            let error = BeaconError.advertisingRestricted
-                            print("❌ Emission Error: \(error.localizedDescription)")
-                            if let suggestion = error.recoverySuggestion { print("💡 \(suggestion)") }
-                            Foundation.exit(1)
-                        }
-
-                        // Auto-fallback to GATT
-                        print("↩️  Falling back to GATT service mode...")
-                        print("ℹ️  GATT fallback is NOT detectable by CLLocationManager on iOS")
-                        print("💡 Use --strict-ibeacon to fail instead of falling back")
-                        let gattStrategy = GATTServiceStrategy()
-                        activeStrategy = gattStrategy
-
-                        let gattResult = await gattStrategy.startEmission(config: config)
-                        switch gattResult {
-                        case .success:
-                            print("🚀 Broadcasting GATT fallback...")
-                            print("Press Ctrl+C to stop")
-                            print("Status updates every 2 seconds...")
-                            print("")
-                        case .failure(let gattError):
-                            print("❌ GATT fallback also failed: \(gattError.localizedDescription)")
-                            if let suggestion = gattError.recoverySuggestion { print("💡 \(suggestion)") }
-                            Foundation.exit(1)
-                        }
-                    }
+                    RunLoop.main.add(statusTimer, forMode: .common)
                 }
             }
             
