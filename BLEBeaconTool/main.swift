@@ -34,6 +34,12 @@ extension BLEBeaconTool {
         
         @Option(name: .shortAndLong, help: "TX Power (-59 to 4 dBm)")
         var power: Int8 = -59
+
+        @Flag(help: "Allow fallback to GATT mode when iBeacon advertising is restricted on macOS")
+        var allowGattFallback = false
+
+        @Flag(help: "Require strict iBeacon mode (fails on macOS where iBeacon advertising is restricted)")
+        var strictIBeacon = false
         
         @Flag(name: .shortAndLong, help: "Enable verbose output")
         var verbose = false
@@ -60,46 +66,49 @@ extension BLEBeaconTool {
                 throw ExitCode.failure
             }
             
-            // Use the enhanced strategy
-            let strategy = EnhancediBeaconStrategy()
-            print("🛠️ Strategy: \(strategy.strategyName)")
-            
-            // Create semaphore for async handling  
-            let semaphore = DispatchSemaphore(value: 0)
+            // Determine emission mode from CLI flags
+            let mode: EmissionMode = allowGattFallback ? .gatt : .iBeacon
+
+            if strictIBeacon && mode != .iBeacon {
+                print("❌ --strict-ibeacon was specified, but mode is not iBeacon")
+                throw ExitCode.failure
+            }
+
+            let emitter = BeaconEmitter()
             
             // Set up signal handling for graceful shutdown
-            var sigintSrc: DispatchSourceSignal?
-            sigintSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-            sigintSrc?.setEventHandler {
+            signal(SIGINT, SIG_IGN)
+            let sigintSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+            sigintSrc.setEventHandler {
                 print("\n🛑 Received interrupt signal, stopping...")
-                Task {
-                    await strategy.stopEmission()
-                }
+                emitter.stopEmission()
                 Foundation.exit(0)
             }
-            sigintSrc?.resume()
-            signal(SIGINT, SIG_IGN)
+            sigintSrc.resume()
             
-            // Check if emission is possible
             Task {
-                if await strategy.canEmit() {
-                    print("✅ System can emit beacons")
-                    let result = await strategy.startEmission(config: config)
-                    switch result {
-                    case .success:
-                        print("🚀 Broadcasting iBeacon...")
-                        print("Press Ctrl+C to stop")
-                        print("Status updates every 10 seconds...")
-                        print("")
-                    case .failure(let error):
-                        print("❌ Emission Error: \(error.localizedDescription)")
-                        semaphore.signal()
-                        return
+                // 1. Start emission (BT state handled internally by delegate)
+                print("📡 Emission mode: \(mode.rawValue)")
+                let result = await emitter.startEmission(config: config, mode: mode)
+                
+                switch result {
+                case .failure(let error):
+                    print("❌ Emission Error: \(error.localizedDescription)")
+                    if let suggestion = error.recoverySuggestion { print("💡 \(suggestion)") }
+                    Foundation.exit(1)
+                    
+                case .success:
+                    print("✅ iBeacon broadcast is now active!")
+                    print("📡 Broadcasting. Press Ctrl+C to stop.")
+                    print("💡 Verify reception on an external device (e.g. iPhone with nRF Connect, Locate Beacon, or another device running 'BLEBeaconTool scan').")
+                }
+                
+                // 2. Periodic status updates scheduled on main thread
+                DispatchQueue.main.async {
+                    let statusTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+                        emitter.showStatus()
                     }
-                } else {
-                    print("❌ System cannot emit beacons (hardware/permissions)")
-                    semaphore.signal()
-                    return
+                    RunLoop.main.add(statusTimer, forMode: .common)
                 }
             }
             
@@ -121,6 +130,9 @@ extension BLEBeaconTool {
         
         @Flag(name: .shortAndLong, help: "Enable verbose output")
         var verbose = false
+
+        @Flag(help: "Dump raw advertisement data from every BLE peripheral (diagnostic mode)")
+        var dumpAds = false
         
         func run() throws {
             print("📡 BLE iBeacon Scanner")
@@ -129,25 +141,29 @@ extension BLEBeaconTool {
             } else {
                 print("Scanning for all iBeacons")
             }
+            if dumpAds {
+                print("🔍 Diagnostic mode: dumping raw advertisement data from all peripherals")
+            }
             print("Duration: \(duration) seconds")
             print(String(repeating: "=", count: 50))
             
             let scanner = BeaconScanner(
                 filterUUID: uuid,
                 duration: duration,
-                verbose: verbose
+                verbose: verbose,
+                dumpAds: dumpAds
             )
             
             scanner.startScanning()
-            let semaphore = DispatchSemaphore(value: 0)
             
-            // Keep running for specified duration
+            // Schedule stop after duration
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
                 scanner.stopScanning()
-                semaphore.signal()
+                Foundation.exit(0)
             }
             
-            semaphore.wait()
+            // Keep the run loop spinning so CBCentralManager delegate callbacks are delivered
+            RunLoop.main.run()
         }
     }
     

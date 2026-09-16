@@ -15,17 +15,22 @@ A command-line tool for broadcasting and scanning Bluetooth Low Energy (BLE) iBe
 1. Open `BLEBeaconTool.xcodeproj` in Xcode
 2. Build and run (⌘R)
 
-### Option 2: Command Line Build (xcodebuild)
+### Option 2: Command Line Build & App Packaging (Required for macOS 11+)
+To broadcast true iBeacon frames on macOS 11+, the tool requires the App Sandbox entitlement. We provide a script to build and package the CLI tool into a signed `.app` bundle.
+
 ```bash
-# Build release version using xcodebuild
+# 1. Build release version using xcodebuild
 xcodebuild -project BLEBeaconTool.xcodeproj -scheme BLEBeaconTool -configuration Release build
 
-# Copy binary to current directory for easy use
+# 2. Copy the built binary to the project root
 cp /Users/$(whoami)/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Products/Release/BLEBeaconTool ./ble-beacon-tool
 
-# Or copy to system path (optional)
-sudo cp ./ble-beacon-tool /usr/local/bin/
+# 3. Package the binary into a signed App Bundle (applies Sandbox entitlements)
+./package_app.sh
 ```
+
+After packaging, run the tool from within the app bundle:
+`./BLEBeaconTool.app/Contents/MacOS/BLEBeaconTool advertise`
 
 ### Option 3: Direct Binary Copy
 ```bash
@@ -45,7 +50,15 @@ cp /Users/$(whoami)/Library/Developer/Xcode/DerivedData/BLEBeaconTool-*/Build/Pr
 
 # Verbose output
 ./BLEBeaconTool advertise --verbose
+
+# Use GATT fallback mode when iBeacon advertising is restricted on macOS
+./BLEBeaconTool advertise --allow-gatt-fallback
+
+# Require strict iBeacon mode (fails on restricted macOS)
+./BLEBeaconTool advertise --strict-ibeacon
 ```
+
+Note: On macOS, standard iBeacon advertising via manufacturer data may be restricted by platform behavior. By default, the tool auto-switches to GATT fallback mode so advertising still works. Use `--strict-ibeacon` to require true iBeacon mode and fail if restricted.
 
 ### Typical Range by TX Power
 
@@ -102,7 +115,7 @@ The tool supports comprehensive beacon scanning with flexible filtering options:
 
 | Command | Description | Parameters |
 |---------|-------------|------------|
-| `advertise` | Broadcast iBeacon signal | `--uuid`, `--major`, `--minor`, `--power`, `--verbose` |
+| `advertise` | Broadcast iBeacon signal (or auto GATT fallback) | `--uuid`, `--major`, `--minor`, `--power`, `--allow-gatt-fallback`, `--strict-ibeacon`, `--verbose` |
 | `scan` | Scan for beacons (all or filtered by UUID) | `--uuid` (optional), `--duration`, `--verbose` |
 | `status` | Show system status | None |
 
@@ -112,6 +125,8 @@ The tool supports comprehensive beacon scanning with flexible filtering options:
 - `--major` / `-m`: Major value 0-65535 (default: 100)
 - `--minor` / `-n`: Minor value 0-65535 (default: 1)  
 - `--power` / `-p`: TX Power -59 to 4 dBm (default: -59)
+- `--allow-gatt-fallback`: Explicitly request non-iBeacon BLE advertising fallback on restricted macOS systems
+- `--strict-ibeacon`: Disable fallback and fail when true iBeacon advertising is restricted
 - `--duration` / `-d`: Scan duration in seconds (default: 30)
 - `--verbose` / `-v`: Enable detailed output
 
@@ -167,6 +182,7 @@ Duration: 30 seconds
 | Issue | Solution |
 |-------|----------|
 | "Bluetooth access unauthorized" | Grant Bluetooth permissions in System Settings |
+| "BLE advertising is restricted on this system" | Use iPhone/hardware beacon for real iBeacon, or run with `--allow-gatt-fallback` |
 | "Location permission denied" | Grant Location permissions for scanning features |
 | No beacons detected | Check if beacon is broadcasting, verify UUID filter |
 | Command not found | Ensure tool is in PATH or use full path |

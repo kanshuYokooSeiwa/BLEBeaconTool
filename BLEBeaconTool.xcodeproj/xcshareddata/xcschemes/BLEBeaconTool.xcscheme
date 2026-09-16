@@ -53,7 +53,23 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "status"
+            argument = "scan"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--uuid"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "12345678-1234-1234-1234-123456789ABC"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "--duration"
+            isEnabled = "YES">
+         </CommandLineArgument>
+         <CommandLineArgument
+            argument = "60"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
@@ -81,5 +97,23 @@
    <ArchiveAction
       buildConfiguration = "Release"
       revealArchiveInOrganizer = "YES">
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Inject ApplicationProperties"
+               scriptText = "PLIST=&quot;$ARCHIVE_PATH/Info.plist&quot;&#10;/usr/libexec/PlistBuddy -c &quot;Add :ApplicationProperties dict&quot; &quot;$PLIST&quot;&#10;/usr/libexec/PlistBuddy -c &quot;Add :ApplicationProperties:ApplicationPath string Products/usr/local/bin/BLEBeaconTool&quot; &quot;$PLIST&quot;&#10;/usr/libexec/PlistBuddy -c &quot;Add :ApplicationProperties:CFBundleIdentifier string com.k-yokoo.BLEBeaconTool&quot; &quot;$PLIST&quot;&#10;/usr/libexec/PlistBuddy -c &quot;Add :ApplicationProperties:CFBundleShortVersionString string $MARKETING_VERSION&quot; &quot;$PLIST&quot;&#10;/usr/libexec/PlistBuddy -c &quot;Add :ApplicationProperties:CFBundleVersion string $CURRENT_PROJECT_VERSION&quot; &quot;$PLIST&quot;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "D3F7FFDA2F346DBF008FB49B"
+                     BuildableName = "BLEBeaconTool"
+                     BlueprintName = "BLEBeaconTool"
+                     ReferencedContainer = "container:BLEBeaconTool.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
    </ArchiveAction>
 </Scheme>
